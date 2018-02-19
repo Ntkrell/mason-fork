@@ -1,5 +1,7 @@
 package sim.app.sensor;
 
+import java.util.concurrent.TimeUnit;
+
 import sim.engine.*;
 import sim.field.continuous.*;
 import sim.util.*;
@@ -19,6 +21,9 @@ public class Node implements Steppable {
 	double lrange;
 	double srange;
 
+	int constCount = 0;
+	int LRRadioUsedCount = 1;
+
 	boolean useLRRadio = false;
 
 	public Node(int id, double val, Double2D loc, SimState state) {
@@ -33,13 +38,16 @@ public class Node implements Steppable {
 	}
 
 	public void step(SimState state) {
-		//Sensor sim = (Sensor)state;
+		Sensor sim = (Sensor)state;
 
 		if (useLRRadio) {
+
+			sim.LRRadioUsedCount++;
+
 			setLRRadio(false);
 			Node dst = select(sim.LRField, lrange);
-			if (dst != null)
-				send(dst);
+			if (dst != null) 
+				recvFrom(dst);
 		}
 
 		Node dst = select(sim.field, srange);
@@ -47,14 +55,22 @@ public class Node implements Steppable {
 			System.out.printf("Node %d has no neighbor\n", id);
 			System.exit(-1);
 		}
-		send(dst);
+
+		recvFrom(dst);
 	}
 
-	public void send(Node dst) {
+	public void recvFrom(Node dst) {
+		double oldVal = val;
 		val = mixing * val + (1 - mixing) * dst.val;
-		update();
-		if (stdev <= threshold)
+		if (Math.abs(val - oldVal) < threshold)
+			constCount += 1;
+		else
+			constCount = 0;
+		if (constCount > 5 + LRRadioUsedCount) {
+			LRRadioUsedCount += 1;
 			setLRRadio(true);
+			constCount = 0;
+		}
 	}
 
 	public Node select(Continuous2D f, double r) {
@@ -73,8 +89,8 @@ public class Node implements Steppable {
 	public void setLRRadio(boolean use) {
 		useLRRadio = use;
 		if (use) 
-			sim.LRField.remove(this);
-		else
 			sim.LRField.setObjectLocation(this, loc);
+		else
+			sim.LRField.remove(this);
 	}
 }
